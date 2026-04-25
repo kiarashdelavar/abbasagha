@@ -1,0 +1,80 @@
+[
+  {
+    "id": "dca8ca97-152f-4db7-93e4-86dc536c824e",
+    "userId": "demo-user-1",
+    "status": "active",
+    "createdAt": "2026-04-25T11:58:18.028473",
+    "task": {
+      "agentType": "habit_enforcer",
+      "scheduleType": "weekly",
+      "runAt": null,
+      "trigger": "marathon_training_check",
+      "config": {
+        "habitName": "Marathon Training",
+        "frequency": 3,
+        "period": "weekly",
+        "target": "10km per session",
+        "trackingMethod": "manual_checkin"
+      }
+    },
+    "updatedAt": "2026-04-25T12:26:32.010873"
+  },
+  {
+    "id": "8872a065-70bf-4434-ab2c-230561c7f955",
+    "userId": "demo-user-1",
+    "status": "active",
+    "createdAt": "2026-04-25T12:26:20.026622",
+    "task": {
+      "agentType": "tax_ledger",
+      "scheduleType": "once",
+      "runAt": "now",
+      "config": {
+        "store": "MediaMarkt Amsterdam",
+        "product": "LG 27-inch Monitor",
+        "total_eur": 350,
+        "vat_percentage": 21,
+        "net_amount": 289.26,
+        "vat_amount": 60.74,
+        "payment_method": "bunq card",
+        "date": "today",
+        "category": "electronics",
+        "status": "logged"
+      }
+    }
+  },
+  {
+    "id": "8c8d8699-11cc-4ddd-802a-1debe50c8381",
+    "userId": "demo-user-1",
+    "status": "active",
+    "createdAt": "2026-04-25T12:28:07.142866",
+    "task": {
+      "agentType": "midnight_sweeper",
+      "scheduleType": "daily",
+      "runAt": "23:59",
+      "config": {
+        "mainAccountMinBalance": 200,
+        "targetAccount": "Savings",
+        "action": "sweep_excess",
+        "currency": "EUR",
+        "notifyOnTransfer": true
+      }
+    }
+  },
+  {
+    "id": "ce22a956-9ca9-486b-9095-b77d75553399",
+    "userId": "demo-user-1",
+    "status": "active",
+    "createdAt": "2026-04-25T12:28:22.910164",
+    "task": {
+      "agentType": "midnight_sweeper",
+      "scheduleType": "daily",
+      "runAt": "23:59",
+      "config": {
+        "mainAccountMinimumBalance": 200,
+        "minimumTransferThreshold": 100,
+        "targetAccount": "Savings",
+        "currency": "EUR"
+      }
+    }
+  }
+]

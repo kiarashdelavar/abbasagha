@@ -1,0 +1,78 @@
+[
+  {
+    "timestamp": "2026-04-25T02:38:17.556424",
+    "actionType": "BUNQ_WEBHOOK_RECEIVED",
+    "data": {
+      "payload": {
+        "eventType": "bunq_transaction",
+        "data": {
+          "message": "New sandbox transaction received",
+          "source": "manual swagger test"
+        }
+      },
+      "latestTransaction": {
+        "id": 31997022,
+        "created": "2026-04-25 00:33:55.183359",
+        "updated": "2026-04-25 00:33:55.183359",
+        "amount": "-10.00",
+        "currency": "EUR",
+        "counterparty": "Sugar Daddy",
+        "counterpartyIban": "NL32BUNQ2025313705",
+        "description": "Hackathon test payment",
+        "type": "BUNQ",
+        "subType": "PAYMENT",
+        "status": "ARRIVED",
+        "balanceAfter": "515.00",
+        "balanceCurrency": "EUR"
+      },
+      "routingResult": {
+        "selectedAgent": "TaxLedgerAgent",
+        "reason": "Transaction looks like a payment that can be documented."
+      }
+    }
+  },
+  {
+    "timestamp": "2026-04-25T02:38:56.714369",
+    "actionType": "REWARD_EXECUTED",
+    "data": {
+      "amount": "10.00",
+      "description": "A1 Copilot habit reward",
+      "result": [
+        {
+          "Id": {
+            "id": 2355922
+          }
+        }
+      ]
+    }
+  },
+  {
+    "timestamp": "2026-04-25T02:38:56.715376",
+    "actionType": "HABIT_ENFORCER_AUTOMATION",
+    "data": {
+      "goal": "Make at least 3 GitHub commits today",
+      "proofText": "The user made 4 commits today in the Hackathon-KKM repository.",
+      "amount": "10.00",
+      "aiResult": "Status: SUCCESS\n\nConfidence: High\n\nReason:\nThe user's goal was to make at least 3 GitHub commits today. According to the activity data provided, the user made 4 commits in the Hackathon-KKM repository, which exceeds the minimum target of 3 commits.\n\nRecommended bunq action:\n- Move reward money to fun budget\n\nSuggested amount:\n\u20ac5-10 (or equivalent in user's currency)\n\nNotification message:\n\ud83c\udf89 Goal Achieved! You made 4 GitHub commits today, exceeding your target of 3. Great productivity! Your reward has been transferred to your fun budget. Keep up the momentum!",
+      "actionResult": {
+        "executed": true,
+        "type": "reward",
+        "log": {
+          "timestamp": "2026-04-25T02:38:56.714369",
+          "actionType": "REWARD_EXECUTED",
+          "data": {
+            "amount": "10.00",
+            "description": "A1 Copilot habit reward",
+            "result": [
+              {
+                "Id": {
+                  "id": 2355922
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+]

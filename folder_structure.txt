@@ -1,0 +1,71 @@
+.
+├── README.md
+├── backend
+│   ├── 01_authentication.py
+│   ├── 02_create_monetary_account.py
+│   ├── 03_list_monetary_accounts.py
+│   ├── 03_make_payment.py
+│   ├── 04_request_money.py
+│   ├── 05_create_bunqme_link.py
+│   ├── 06_list_transactions.py
+│   ├── 07_setup_callbacks.py
+│   ├── bunq_client.py
+│   └── server
+│       ├── agents
+│       │   ├── __init__.py
+│       │   └── plannerAgent.py
+│       ├── anthropicService.py
+│       ├── app.py
+│       ├── automation
+│       │   ├── __init__.py
+│       │   ├── actionExecutor.py
+│       │   ├── safetyGuard.py
+│       │   ├── scheduler.py
+│       │   ├── taskStore.py
+│       │   ├── tasks.json
+│       │   └── webhookHandler.py
+│       ├── bunqService.py
+│       ├── chat
+│       │   ├── __init__.py
+│       │   ├── chatOrchestrator.py
+│       │   ├── conversationStore.py
+│       │   └── conversations.json
+│       ├── habitEnforcer.py
+│       ├── lifestyleArbitrage.py
+│       ├── midnightSweeper.py
+│       ├── storage
+│       │   ├── __init__.py
+│       │   ├── logs.json
+│       │   └── memoryStore.py
+│       └── taxLedgerAgent.py
+├── docs
+│   ├── API_REFERENCE.md
+│   └── TROUBLESHOOTING.md
+├── folder_structure.txt
+├── frontend
+│   ├── AGENTS.md
+│   ├── CLAUDE.md
+│   ├── app
+│   │   ├── favicon.ico
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   ├── login
+│   │   │   └── page.tsx
+│   │   └── page.tsx
+│   ├── eslint.config.mjs
+│   ├── next.config.ts
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.mjs
+│   ├── public
+│   │   ├── file.svg
+│   │   ├── globe.svg
+│   │   ├── next.svg
+│   │   ├── user_mock.json
+│   │   ├── vercel.svg
+│   │   └── window.svg
+│   ├── tailwind.config.ts
+│   └── tsconfig.json
+└── requirements.txt
+
+12 directories, 57 files
