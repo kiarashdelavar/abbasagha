@@ -78,6 +78,96 @@ class ChatMessageRequest(BaseModel):
     userId: str = "demo-user-1"
     message: str
 
+class FinancialWarningRequest(BaseModel):
+    amount: float
+    category: str
+    description: str = ""
+    weeklyBudget: float = 100.0
+    currentWeeklySpend: float = 0.0
+
+def analyze_financial_risk(
+    amount: float,
+    category: str,
+    description: str,
+    weekly_budget: float,
+    current_weekly_spend: float,
+):
+    """
+    Analyze whether a planned purchase may be risky.
+
+    This is an MVP rule-based warning system.
+    Later this can be improved with user spending history and AI reasoning.
+    """
+
+    new_total = current_weekly_spend + amount
+    budget_usage = (new_total / weekly_budget) * 100 if weekly_budget > 0 else 0
+
+    risk_level = "low"
+    warnings = []
+    suggestions = []
+
+    if amount >= weekly_budget * 0.75:
+        risk_level = "high"
+        warnings.append(
+            "This single purchase is very large compared to your weekly budget."
+        )
+
+    if budget_usage >= 100:
+        risk_level = "high"
+        warnings.append(
+            "This purchase would put you over your weekly budget."
+        )
+    elif budget_usage >= 80:
+        if risk_level != "high":
+            risk_level = "medium"
+        warnings.append(
+            "This purchase would use more than 80% of your weekly budget."
+        )
+
+    risky_categories = ["shopping", "food & drinks", "subscriptions", "entertainment"]
+
+    if category.lower() in risky_categories and amount >= 50:
+        if risk_level == "low":
+            risk_level = "medium"
+        warnings.append(
+            f"This is a relatively high {category} expense."
+        )
+
+    if not warnings:
+        warnings.append("This purchase looks okay based on the current rules.")
+
+    if risk_level == "high":
+        suggestions.extend(
+            [
+                "Wait 24 hours before making this purchase.",
+                "Check if this purchase is necessary today.",
+                "Consider a cheaper alternative.",
+            ]
+        )
+    elif risk_level == "medium":
+        suggestions.extend(
+            [
+                "Check your remaining weekly budget first.",
+                "Compare this with your recent spending.",
+            ]
+        )
+    else:
+        suggestions.append("You can continue, but keep tracking your spending.")
+
+    return {
+        "feature": "Proactive Financial Warning",
+        "riskLevel": risk_level,
+        "amount": amount,
+        "category": category,
+        "description": description,
+        "weeklyBudget": weekly_budget,
+        "currentWeeklySpend": current_weekly_spend,
+        "projectedWeeklySpend": round(new_total, 2),
+        "budgetUsagePercent": round(budget_usage, 2),
+        "warnings": warnings,
+        "suggestions": suggestions,
+        "requiresConfirmation": risk_level in ["medium", "high"],
+    }
 
 @app.get("/")
 def home():
@@ -670,6 +760,18 @@ async def receipt_analysis(
         "rawTextPreview": receipt_text[:1000],
         "nextStep": "Improve extraction with a multimodal AI model for better merchant, item, and total detection.",
     }
+
+@app.post("/api/ai/proactive-warning")
+def proactive_financial_warning(request: FinancialWarningRequest):
+    result = analyze_financial_risk(
+        amount=request.amount,
+        category=request.category,
+        description=request.description,
+        weekly_budget=request.weeklyBudget,
+        current_weekly_spend=request.currentWeeklySpend,
+    )
+
+    return result
 
 @app.get("/api/demo/overview")
 def demo_overview():
