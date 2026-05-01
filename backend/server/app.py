@@ -307,7 +307,7 @@ def extract_text_from_receipt_image(file_bytes: bytes) -> str:
         image = Image.open(BytesIO(file_bytes))
         image = image.convert("L")
 
-        text = pytesseract.image_to_string(image)
+        text = pytesseract.image_to_string(image, config="--psm 6")
 
         return text.strip()
 
@@ -328,38 +328,153 @@ def normalize_amount(amount_text: str) -> str:
 
 def extract_total_amount(receipt_text: str) -> str:
     """
-    Try to find the final total amount from receipt text.
+    Extract the real final receipt total.
+
+    Important:
+    - Do NOT choose the biggest number.
+    - Do NOT use cash paid as total.
+    - Prefer the first amount after the word Total/Totaal.
+    - Stop before payment/change/tax sections.
     """
 
-    lines = receipt_text.splitlines()
-    total_keywords = ["total", "sub total", "subtotal", "totaal", "sum", "amount"]
+    text = receipt_text.replace("\r", "\n")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    stop_words = [
+        "dinheiro",
+        "dinh",
+        "cash",
+        "troco",
+        "troc",
+        "change",
+        "taxa",
+        "tax",
+        "iva",
+        "vat",
+        "base",
+        "imp",
+        "val.total",
+        "val.iva",
+    ]
+
+    def is_date_part(amount: str, source_text: str) -> bool:
+        return bool(re.search(rf"\b{re.escape(amount)}[./-]\d{{2,4}}\b", source_text))
+
+    def is_unit_price(amount: str, source_text: str) -> bool:
+        return bool(re.search(rf"[xX]\s*{re.escape(amount)}", source_text))
+
+    def clean_amount(amount: str) -> str:
+        return normalize_amount(amount)
+
+    # 1. Best case: line contains "Total" and amount on same line.
+    for line in lines:
+        lower_line = line.lower()
+
+        if re.match(r"^total\b", lower_line) or re.match(r"^totaal\b", lower_line):
+            amounts = re.findall(r"\d+[,.]\d{2}", line)
+
+            for amount in amounts:
+                if is_date_part(amount, text) or is_unit_price(amount, text):
+                    continue
+
+                try:
+                    value = float(clean_amount(amount))
+                    if 0.01 <= value <= 10000:
+                        return f"{value:.2f}"
+                except ValueError:
+                    continue
+
+    # 2. Common OCR case: "Total" is on one line and amount is on a nearby next line.
+    for index, line in enumerate(lines):
+        lower_line = line.lower()
+
+        if not (re.match(r"^total\b", lower_line) or re.match(r"^totaal\b", lower_line)):
+            continue
+
+        nearby_lines = []
+
+        for next_line in lines[index + 1 : index + 6]:
+            lower_next_line = next_line.lower()
+
+            if any(stop_word in lower_next_line for stop_word in stop_words):
+                break
+
+            nearby_lines.append(next_line)
+
+        nearby_text = " ".join(nearby_lines)
+        amounts = re.findall(r"\d+[,.]\d{2}", nearby_text)
+
+        for amount in amounts:
+            if is_date_part(amount, text) or is_unit_price(amount, text):
+                continue
+
+            try:
+                value = float(clean_amount(amount))
+                if 0.01 <= value <= 10000:
+                    return f"{value:.2f}"
+            except ValueError:
+                continue
+
+    # 3. Strong fallback: search a short text window after the word Total.
+    total_match = re.search(r"\b(total|totaal)\b", text, flags=re.IGNORECASE)
+
+    if total_match:
+        after_total = text[total_match.end() : total_match.end() + 120]
+
+        stop_positions = []
+
+        for stop_word in stop_words:
+            match = re.search(stop_word, after_total, flags=re.IGNORECASE)
+            if match:
+                stop_positions.append(match.start())
+
+        if stop_positions:
+            after_total = after_total[: min(stop_positions)]
+
+        amounts = re.findall(r"\d+[,.]\d{2}", after_total)
+
+        for amount in amounts:
+            if is_date_part(amount, text) or is_unit_price(amount, text):
+                continue
+
+            try:
+                value = float(clean_amount(amount))
+                if 0.01 <= value <= 10000:
+                    return f"{value:.2f}"
+            except ValueError:
+                continue
+
+    # 4. Last fallback: use the largest amount before payment/tax section.
+    cleaned_lines = []
 
     for line in lines:
         lower_line = line.lower()
 
-        if any(keyword in lower_line for keyword in total_keywords):
-            amounts = re.findall(r"\d+[,.]\d{2}", line)
+        if any(stop_word in lower_line for stop_word in stop_words):
+            break
 
-            if amounts:
-                return normalize_amount(amounts[-1])
+        cleaned_lines.append(line)
 
-    all_amounts = re.findall(r"\d+[,.]\d{2}", receipt_text)
+    cleaned_text = "\n".join(cleaned_lines)
+    amounts = re.findall(r"\d+[,.]\d{2}", cleaned_text)
 
-    if not all_amounts:
-        return "Not detected yet"
+    values = []
 
-    numeric_amounts = []
+    for amount in amounts:
+        if is_date_part(amount, text) or is_unit_price(amount, text):
+            continue
 
-    for amount in all_amounts:
         try:
-            numeric_amounts.append(float(normalize_amount(amount)))
+            value = float(clean_amount(amount))
+            if 0.01 <= value <= 10000:
+                values.append(value)
         except ValueError:
             continue
 
-    if not numeric_amounts:
-        return "Not detected yet"
+    if values:
+        return f"{max(values):.2f}"
 
-    return f"{max(numeric_amounts):.2f}"
+    return "Not detected yet"
 
 
 def extract_receipt_date(receipt_text: str) -> str:
@@ -385,29 +500,29 @@ def extract_receipt_date(receipt_text: str) -> str:
 def extract_merchant(receipt_text: str, filename: str) -> str:
     """
     Try to detect the merchant name.
-    Usually the first clear uppercase line on a receipt is the merchant.
+    Some OCR results are imperfect, for example LIDL can become LoDL.
     """
-
-    known_merchants = [
-        "LIDL",
-        "ALDI",
-        "JUMBO",
-        "ALBERT HEIJN",
-        "AH",
-        "PLUS",
-        "SPAR",
-        "KFC",
-        "MCDONALD",
-        "BURGER KING",
-        "STARBUCKS",
-        "SUPERMARKET",
-    ]
 
     upper_text = receipt_text.upper()
 
-    for merchant in known_merchants:
-        if merchant in upper_text:
-            return merchant
+    known_merchants = {
+        "LIDL": ["LIDL", "LDL", "LODL", "L1DL", "L DL"],
+        "ALDI": ["ALDI"],
+        "JUMBO": ["JUMBO"],
+        "ALBERT HEIJN": ["ALBERT HEIJN", "AH"],
+        "PLUS": ["PLUS"],
+        "SPAR": ["SPAR"],
+        "KFC": ["KFC"],
+        "MCDONALD": ["MCDONALD", "MCDONALDS"],
+        "BURGER KING": ["BURGER KING"],
+        "STARBUCKS": ["STARBUCKS"],
+        "SUPERMARKET": ["SUPERMARKET"],
+    }
+
+    for merchant, variants in known_merchants.items():
+        for variant in variants:
+            if variant in upper_text:
+                return merchant
 
     lines = [line.strip() for line in receipt_text.splitlines() if line.strip()]
 
@@ -419,13 +534,35 @@ def extract_merchant(receipt_text: str, filename: str) -> str:
 
     return filename
 
-
 def detect_category(text_source: str) -> str:
     """
     Detect a simple expense category from receipt text, note, or file name.
+    Groceries are checked first because supermarket receipts often contain many random OCR words.
     """
 
     lower_text = text_source.lower()
+
+    if any(
+        word in lower_text
+        for word in [
+            "lidl",
+            "lodl",
+            "aldi",
+            "jumbo",
+            "albert",
+            "supermarket",
+            "grocery",
+            "market",
+            "tomate",
+            "abacaxi",
+            "batata",
+            "mozzarella",
+            "queijo",
+            "agua",
+            "cornichons",
+        ]
+    ):
+        return "Groceries"
 
     if any(
         word in lower_text
@@ -451,30 +588,9 @@ def detect_category(text_source: str) -> str:
             "uber",
             "taxi",
             "transport",
-            "ns",
-            "ov",
         ]
     ):
         return "Transport"
-
-    if any(
-        word in lower_text
-        for word in [
-            "market",
-            "grocery",
-            "supermarket",
-            "albert",
-            "jumbo",
-            "aldi",
-            "lidl",
-            "tomate",
-            "mozzarella",
-            "queijo",
-            "agua",
-            "batata",
-        ]
-    ):
-        return "Groceries"
 
     if any(
         word in lower_text
