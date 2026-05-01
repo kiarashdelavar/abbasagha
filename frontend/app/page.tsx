@@ -79,6 +79,24 @@ export interface Message {
   agentData?: unknown;
 }
 
+type ReceiptAnalysisResponse = {
+  feature: string;
+  status: string;
+  fileName: string;
+  fileType: string;
+  fileSizeKb: number;
+  category: string;
+  summary: string;
+  extractedData: {
+    merchant: string;
+    date: string;
+    totalAmount: string;
+    currency: string;
+    category: string;
+  };
+  nextStep: string;
+};
+
 const mockUser = {
   firstName: "Mike",
   lastName: "Mortazavi",
@@ -360,6 +378,86 @@ export default function Home() {
     window.location.href = "/login";
   };
 
+    const formatReceiptAnalysis = (data: ReceiptAnalysisResponse) => {
+    return `🧾 Receipt Analysis
+
+File: ${data.fileName}
+Category: ${data.category}
+Merchant: ${data.extractedData.merchant}
+Date: ${data.extractedData.date}
+Total: ${data.extractedData.totalAmount} ${data.extractedData.currency}
+
+${data.summary}`;
+  };
+
+  const sendReceiptFilesToBackend = async (
+    receiptFiles: { id: number; file: File; progress: number | null }[],
+    note: string,
+  ) => {
+    const tempAiId = `${Date.now()}-receipt-ai`;
+
+    setMessages((previousMessages) => [
+      ...previousMessages,
+      {
+        id: tempAiId,
+        role: "ai",
+        text: "",
+        isLoading: true,
+      },
+    ]);
+
+    try {
+      const receiptResults: string[] = [];
+
+      for (const receiptFile of receiptFiles) {
+        const formData = new FormData();
+        formData.append("file", receiptFile.file);
+        formData.append("note", note || "Receipt uploaded from chat");
+
+        const response = await fetch(
+          "http://localhost:8000/api/ai/receipt-analysis",
+          {
+            method: "POST",
+            body: formData,
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Receipt analysis failed. Status: ${response.status}`);
+        }
+
+        const data: ReceiptAnalysisResponse = await response.json();
+        receiptResults.push(formatReceiptAnalysis(data));
+      }
+
+      setMessages((previousMessages) =>
+        previousMessages.map((message) =>
+          message.id === tempAiId
+            ? {
+                ...message,
+                text: receiptResults.join("\n\n---\n\n"),
+                isLoading: false,
+              }
+            : message,
+        ),
+      );
+    } catch (error) {
+      console.error("Receipt analysis error:", error);
+
+      setMessages((previousMessages) =>
+        previousMessages.map((message) =>
+          message.id === tempAiId
+            ? {
+                ...message,
+                text: "I could not analyze this receipt. Please check if the backend is running on http://localhost:8000 and try again.",
+                isLoading: false,
+              }
+            : message,
+        ),
+      );
+    }
+  };
+
   const sendToBackend = async (payloadMessages: Message[]) => {
     const lastUserMessage =
       payloadMessages.filter((message) => message.role === "user").pop()
@@ -419,7 +517,7 @@ export default function Home() {
     }
   };
 
-  const handleSendMessage = () => {
+    const handleSendMessage = () => {
     if (
       !chatMessage.trim() &&
       stagedFiles.length === 0 &&
@@ -431,12 +529,14 @@ export default function Home() {
     const newMessages: Message[] = [];
     const mainText = chatMessage.trim();
 
+    const filesToAnalyze = [...stagedFiles];
+
     stagedFiles.forEach((stagedFile) => {
       newMessages.push({
         id: Date.now() + Math.random(),
         role: "user",
         fileName: stagedFile.file.name,
-        text: mainText || "Uploaded a file.",
+        text: mainText || "Uploaded a receipt for analysis.",
       });
     });
 
@@ -466,7 +566,9 @@ export default function Home() {
 
       const newChatTitle = mainText
         ? `${mainText.substring(0, 20)}...`
-        : "New Chat";
+        : filesToAnalyze.length > 0
+          ? "Receipt Analysis"
+          : "New Chat";
 
       setChats((previousChats) => [
         { id: currentChatId as number, title: newChatTitle, isPinned: false },
@@ -486,6 +588,11 @@ export default function Home() {
     setStagedFiles([]);
     setRecordedVoices([]);
     setVoiceError("");
+
+    if (filesToAnalyze.length > 0) {
+      sendReceiptFilesToBackend(filesToAnalyze, mainText);
+      return;
+    }
 
     sendToBackend(newMessages);
   };
@@ -1032,11 +1139,12 @@ export default function Home() {
 
             <div className="flex items-end gap-3 bg-item-bg-offblack p-2 rounded-2xl border border-line-gray relative">
               <input
-                type="file"
-                multiple
-                className="hidden"
-                ref={fileInputRef}
-                onChange={handleFileChange}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/jpg,application/pdf"
+              className="hidden"
+              ref={fileInputRef}
+              onChange={handleFileChange}
               />
 
               <div
