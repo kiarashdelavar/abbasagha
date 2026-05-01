@@ -1,3 +1,8 @@
+import re
+from io import BytesIO
+
+import pytesseract
+from PIL import Image
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -13,6 +18,8 @@ from server.automation.scheduler import AutomationScheduler
 from server.automation.taskStore import get_tasks_for_user, load_tasks
 from server.storage.memoryStore import load_logs
 from server.chat.chatOrchestrator import ChatOrchestrator
+
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 app = FastAPI(
     title="A1 Financial Copilot",
@@ -291,6 +298,200 @@ def habit_enforcer(request: HabitRequest):
         },
     }
 
+def extract_text_from_receipt_image(file_bytes: bytes) -> str:
+    """
+    Extract raw text from a receipt image using OCR.
+    """
+
+    try:
+        image = Image.open(BytesIO(file_bytes))
+        image = image.convert("L")
+
+        text = pytesseract.image_to_string(image)
+
+        return text.strip()
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"OCR failed. Make sure Tesseract OCR is installed. Error: {str(error)}",
+        )
+
+
+def normalize_amount(amount_text: str) -> str:
+    """
+    Convert receipt amount text like 19,96 into 19.96.
+    """
+
+    return amount_text.replace(",", ".").strip()
+
+
+def extract_total_amount(receipt_text: str) -> str:
+    """
+    Try to find the final total amount from receipt text.
+    """
+
+    lines = receipt_text.splitlines()
+    total_keywords = ["total", "sub total", "subtotal", "totaal", "sum", "amount"]
+
+    for line in lines:
+        lower_line = line.lower()
+
+        if any(keyword in lower_line for keyword in total_keywords):
+            amounts = re.findall(r"\d+[,.]\d{2}", line)
+
+            if amounts:
+                return normalize_amount(amounts[-1])
+
+    all_amounts = re.findall(r"\d+[,.]\d{2}", receipt_text)
+
+    if not all_amounts:
+        return "Not detected yet"
+
+    numeric_amounts = []
+
+    for amount in all_amounts:
+        try:
+            numeric_amounts.append(float(normalize_amount(amount)))
+        except ValueError:
+            continue
+
+    if not numeric_amounts:
+        return "Not detected yet"
+
+    return f"{max(numeric_amounts):.2f}"
+
+
+def extract_receipt_date(receipt_text: str) -> str:
+    """
+    Try to find a date from receipt text.
+    Supports formats like 17.08.10, 17/08/2010, 2026-05-01.
+    """
+
+    date_patterns = [
+        r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b",
+        r"\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b",
+    ]
+
+    for pattern in date_patterns:
+        match = re.search(pattern, receipt_text)
+
+        if match:
+            return match.group(0)
+
+    return "Not detected yet"
+
+
+def extract_merchant(receipt_text: str, filename: str) -> str:
+    """
+    Try to detect the merchant name.
+    Usually the first clear uppercase line on a receipt is the merchant.
+    """
+
+    known_merchants = [
+        "LIDL",
+        "ALDI",
+        "JUMBO",
+        "ALBERT HEIJN",
+        "AH",
+        "PLUS",
+        "SPAR",
+        "KFC",
+        "MCDONALD",
+        "BURGER KING",
+        "STARBUCKS",
+        "SUPERMARKET",
+    ]
+
+    upper_text = receipt_text.upper()
+
+    for merchant in known_merchants:
+        if merchant in upper_text:
+            return merchant
+
+    lines = [line.strip() for line in receipt_text.splitlines() if line.strip()]
+
+    for line in lines[:8]:
+        clean_line = re.sub(r"[^A-Za-z0-9 &.-]", "", line).strip()
+
+        if len(clean_line) >= 3:
+            return clean_line
+
+    return filename
+
+
+def detect_category(text_source: str) -> str:
+    """
+    Detect a simple expense category from receipt text, note, or file name.
+    """
+
+    lower_text = text_source.lower()
+
+    if any(
+        word in lower_text
+        for word in [
+            "food",
+            "restaurant",
+            "cafe",
+            "coffee",
+            "lunch",
+            "dinner",
+            "mcdonald",
+            "kfc",
+            "burger",
+        ]
+    ):
+        return "Food & Drinks"
+
+    if any(
+        word in lower_text
+        for word in [
+            "train",
+            "bus",
+            "uber",
+            "taxi",
+            "transport",
+            "ns",
+            "ov",
+        ]
+    ):
+        return "Transport"
+
+    if any(
+        word in lower_text
+        for word in [
+            "market",
+            "grocery",
+            "supermarket",
+            "albert",
+            "jumbo",
+            "aldi",
+            "lidl",
+            "tomate",
+            "mozzarella",
+            "queijo",
+            "agua",
+            "batata",
+        ]
+    ):
+        return "Groceries"
+
+    if any(
+        word in lower_text
+        for word in [
+            "amazon",
+            "shop",
+            "store",
+            "clothes",
+            "zara",
+            "h&m",
+            "nike",
+        ]
+    ):
+        return "Shopping"
+
+    return "Other"
+
 @app.post("/api/ai/receipt-analysis")
 async def receipt_analysis(
     file: UploadFile = File(...),
@@ -299,16 +500,15 @@ async def receipt_analysis(
     """
     Analyze an uploaded receipt file.
 
-    This is the first MVP version for the multimodal receipt feature.
-    Later this can be connected to a real vision model/OCR service.
+    This version uses OCR for image receipts and extracts basic financial data.
     """
 
-    allowed_types = ["image/png", "image/jpeg", "image/jpg", "application/pdf"]
+    allowed_types = ["image/png", "image/jpeg", "image/jpg"]
 
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=400,
-            detail="Only PNG, JPG, JPEG, or PDF receipts are supported.",
+            detail="Only PNG, JPG, or JPEG receipt images are supported for OCR.",
         )
 
     file_bytes = await file.read()
@@ -316,19 +516,25 @@ async def receipt_analysis(
 
     filename = file.filename or "receipt"
 
-    lower_name = filename.lower()
-    lower_note = note.lower()
+    receipt_text = extract_text_from_receipt_image(file_bytes)
 
-    category = "Other"
+    merchant = extract_merchant(receipt_text, filename)
+    total_amount = extract_total_amount(receipt_text)
+    receipt_date = extract_receipt_date(receipt_text)
 
-    if any(word in lower_name or word in lower_note for word in ["food", "restaurant", "cafe", "coffee", "lunch", "dinner"]):
-        category = "Food & Drinks"
-    elif any(word in lower_name or word in lower_note for word in ["train", "bus", "uber", "taxi", "transport"]):
-        category = "Transport"
-    elif any(word in lower_name or word in lower_note for word in ["market", "grocery", "albert", "jumbo", "aldi", "lidl"]):
-        category = "Groceries"
-    elif any(word in lower_name or word in lower_note for word in ["amazon", "shop", "store", "clothes"]):
-        category = "Shopping"
+    category_source = f"{filename} {note} {receipt_text}"
+    category = detect_category(category_source)
+
+    if total_amount != "Not detected yet":
+        summary = (
+            f"Receipt analyzed successfully. This looks like a {category} expense "
+            f"from {merchant}, with a detected total of €{total_amount}."
+        )
+    else:
+        summary = (
+            f"Receipt analyzed successfully. This looks like a {category} expense "
+            f"from {merchant}, but the total amount could not be detected clearly."
+        )
 
     return {
         "feature": "Receipt Analysis",
@@ -337,17 +543,17 @@ async def receipt_analysis(
         "fileType": file.content_type,
         "fileSizeKb": file_size_kb,
         "category": category,
-        "summary": f"Receipt uploaded successfully. Based on the file name and note, this looks like a {category} expense.",
+        "summary": summary,
         "extractedData": {
-            "merchant": "Not detected yet",
-            "date": "Not detected yet",
-            "totalAmount": "Not detected yet",
+            "merchant": merchant,
+            "date": receipt_date,
+            "totalAmount": total_amount,
             "currency": "EUR",
             "category": category,
         },
-        "nextStep": "Connect this endpoint to OCR or a multimodal AI model to extract merchant, date, and total amount from the image.",
+        "rawTextPreview": receipt_text[:1000],
+        "nextStep": "Improve extraction with a multimodal AI model for better merchant, item, and total detection.",
     }
-
 
 @app.get("/api/demo/overview")
 def demo_overview():
