@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -289,6 +289,63 @@ def habit_enforcer(request: HabitRequest):
             "failedAction": "Use POST /api/bunq/send-payment as a charity penalty demo",
             "amount": request.amount,
         },
+    }
+
+@app.post("/api/ai/receipt-analysis")
+async def receipt_analysis(
+    file: UploadFile = File(...),
+    note: str = Form(default=""),
+):
+    """
+    Analyze an uploaded receipt file.
+
+    This is the first MVP version for the multimodal receipt feature.
+    Later this can be connected to a real vision model/OCR service.
+    """
+
+    allowed_types = ["image/png", "image/jpeg", "image/jpg", "application/pdf"]
+
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Only PNG, JPG, JPEG, or PDF receipts are supported.",
+        )
+
+    file_bytes = await file.read()
+    file_size_kb = round(len(file_bytes) / 1024, 2)
+
+    filename = file.filename or "receipt"
+
+    lower_name = filename.lower()
+    lower_note = note.lower()
+
+    category = "Other"
+
+    if any(word in lower_name or word in lower_note for word in ["food", "restaurant", "cafe", "coffee", "lunch", "dinner"]):
+        category = "Food & Drinks"
+    elif any(word in lower_name or word in lower_note for word in ["train", "bus", "uber", "taxi", "transport"]):
+        category = "Transport"
+    elif any(word in lower_name or word in lower_note for word in ["market", "grocery", "albert", "jumbo", "aldi", "lidl"]):
+        category = "Groceries"
+    elif any(word in lower_name or word in lower_note for word in ["amazon", "shop", "store", "clothes"]):
+        category = "Shopping"
+
+    return {
+        "feature": "Receipt Analysis",
+        "status": "success",
+        "fileName": filename,
+        "fileType": file.content_type,
+        "fileSizeKb": file_size_kb,
+        "category": category,
+        "summary": f"Receipt uploaded successfully. Based on the file name and note, this looks like a {category} expense.",
+        "extractedData": {
+            "merchant": "Not detected yet",
+            "date": "Not detected yet",
+            "totalAmount": "Not detected yet",
+            "currency": "EUR",
+            "category": category,
+        },
+        "nextStep": "Connect this endpoint to OCR or a multimodal AI model to extract merchant, date, and total amount from the image.",
     }
 
 
